@@ -1,0 +1,286 @@
+global class SetupRoute {
+    public string acList{get; set;}
+    global list < Visit__c > vtList{get; set;}
+    public string userlist{get ;set;}
+    public string leadlist{get; set;}
+    public string visitData {get;set;}
+    public list< Visit__c> visitList{get; set;}
+
+    public SetupRoute() {
+        try {
+            list < User > ulist = [select id, Name, Phone, Email from user where username =: userInfo.getUserName()];
+            userlist = JSON.serialize(ulist);
+            visitList = [select id, name, Visit_Date__c, Visit_Time__c from Visit__c where OwnerId =: UserInfo.getUserID()];
+            visitData = visitList.size() > 0 ? JSON.serialize(visitList) : '';
+            list < Account > acclist = [select id, name, Phone, website, (select contact.Name, contact.Department, contact.Id from contacts), BillingCity, BillingStreet, BillingState, BillingCountry, Account_Latitude__c, Account_Longitude__c from Account where OwnerId =: UserInfo.getUserID()];
+            system.debug('Acc List : ' + acclist);
+            if (!acclist.isEmpty()) {
+                acList = JSON.serialize(acclist);
+                system.debug('LatlongList : ' + acList);
+            }
+            list<lead> ldlist = [select id, name, City, Street, Country, State, Email, Phone, Company, Lead_Latitude__c, Industry, Lead_Longitude__c from lead where OwnerId =: UserInfo.getUserID()];
+            if(ldlist !=null){
+                leadlist = JSON.serialize(ldlist);
+            }
+            system.debug('LeadList : '+leadlist);
+        } catch (Exception e) {
+            system.debug('Error in SetupRoute Class : ' + e.getMessage());
+            system.debug('Error in line no : ' + e.getCause());
+        }
+    }
+/////////////////// MAP view Method /////////////////////////
+    @RemoteAction
+    public static void createVisits(string json_data) {
+        list < visit__c > vtList = new list < Visit__c > ();
+        try {
+            list < string > dateday = new list < string > ();
+            list < datetime > dateList = new list < datetime > ();
+            list < map < string, object >> IdList = new list < map < String, object >> ();
+            list < Visit__c > vt_List = new list < Visit__c > ();
+            list < object > mapData = (list < object > ) JSON.deserializeUntyped(json_data);
+            system.debug('MAp Data : ' + mapData);
+            list < map < string, datetime >> daymap = new list < map < string, datetime >> ();
+
+            for (object vt: mapData) {
+                map < string, object > data = (map < string, object > ) vt;
+                if (data.get('AccountId') != null) {
+                    /*map < string, object > a2 = new map < string, object > ();
+                    for (String Sid: data.keySet()) {
+                        a2.put(Sid, data.get(Sid));
+                    }
+                    IdList.add(a2);*/
+                    IdList.add(data);
+                   system.debug('Data List :' + IdList); 
+                } else if (data.get('Enddate') != null) {
+                    string[] SdateArr = data.get('Startdate').toString().split('/');
+                    datetime Sdate = datetime.newInstance(date.newInstance(integer.valueOf(SdateArr[2]), Integer.valueOf(SdateArr[1]), Integer.valueOf(SdateArr[0])), time.newInstance(0, 0, 0, 0));
+                    String[] EdateArr = data.get('Enddate').tostring().split('/');
+                    datetime Edate = datetime.newInstance(date.newInstance(integer.valueOf(EdateArr[2]), Integer.valueOf(EdateArr[1]), Integer.valueOf(EdateArr[0])), time.newInstance(0, 0, 0, 0));
+                    system.debug('Start date and end date : ' + Sdate + '  ' + Edate);
+                    while (Sdate <= Edate) {
+                        map < string, datetime > a = new map < string, datetime > {
+                            Sdate.format('EEEE') => Sdate
+                        };
+                        daymap.add(a);
+                        Sdate = Sdate.addDays(1);
+                    }
+                    system.debug('Date array with DayName : ' + daymap);
+                    for (string s: data.keySet()) {
+                        if (s != 'Enddate' && s != 'Startdate' && data.get(s) != 'false') {
+                            dateday.add(s);
+                        }
+                    }
+                    system.debug(dateday);
+                    for (map < string, datetime > dmap: daymap) {
+                        for (integer i = 0; i < dateday.size(); i++) {
+                            if (dmap.containskey(dateday[i])) {
+                                dateList.add(dmap.get(dateday[i]));
+                            }
+                        }
+                    }
+
+                } 
+            }
+            system.debug('DateList kya aagyi : ' + dateList);
+            for (map < string, object > visit: IdList) {
+                for (datetime dt: dateList) {
+                    Visit__c newVisit = new Visit__c();
+                    if(visit.get('AccountId').toString().startsWith('001')){
+                        newVisit.Account__c = visit.get('AccountId').toString();
+                    }else{
+                      newVisit.Lead__c = visit.get('AccountId').toString();  
+                    }
+                    system.debug('Account : '+visit.get('AccountId').toString());
+                    newVisit.Visit_Date__c = dt.date();
+                    if(visit.get('ContactId').tostring().startsWith('003')){
+                        newVisit.Contact__c = visit.get('ContactId').tostring();
+                    }
+                    vtList.add(newVisit);
+                }
+            }
+               system.debug('Visit List : ' + vtList);
+               insert vtList;
+            } catch (exception e) {
+                system.debug('Error in creating visit : ' + e.getMessage());
+                system.debug('error line no : ' + e.getLineNumber());
+                system.debug('Error Cause : ' + e.getCause());
+            }
+            // return vtList;
+        }
+    
+    @RemoteAction
+    public static void createVisitsNew(string data){
+        list<Visit__c> visitList = new list<Visit__c>();
+        try{
+            system.debug('Data in Request : '+data);
+            list<object> dataList = (list<object>)JSON.deserializeUntyped(data);
+            system.debug('Data After deserialize : '+dataList);
+            map<string, object> dataMap = (map<string, object>)dataList.get(dataList.size()-1);
+            system.debug('DataList last Object as Map : '+dataMap);
+            dataList.remove(dataList.size()-1);
+            system.debug('Data List after removing last object : '+dataList);
+            string[] SdateArr = dataMap.get('Startdate').toString().split('/');
+            datetime Sdate = datetime.newInstance(date.newInstance(integer.valueOf(SdateArr[2]), Integer.valueOf(SdateArr[1]), Integer.valueOf(SdateArr[0])), time.newInstance(0, 0, 0, 0));
+            String[] EdateArr = dataMap.get('Enddate').tostring().split('/');
+            datetime Edate = datetime.newInstance(date.newInstance(integer.valueOf(EdateArr[2]), Integer.valueOf(EdateArr[1]), Integer.valueOf(EdateArr[0])), time.newInstance(0, 0, 0, 0));
+            system.debug('Start date and end date : ' + Sdate + '  ' + Edate);
+            map < datetime, string > DateDayMap = new map < datetime, string> ();
+            while (Sdate <= Edate) {
+               DateDayMap.put(Sdate, Sdate.format('EEEE'));
+               Sdate = Sdate.addDays(1);
+            }
+            system.debug('Date array with DayName : ' + DateDayMap);
+           
+            for(datetime dtobj : DateDayMap.keySet()){
+                for(object obj:dataList){
+                    map<string, object> visitListMap = (map<string, object>)obj;
+                    Visit__c visitObj = new Visit__c();
+                    if ( DateDayMap.get(dtobj) == dataMap.get('Monday') || 
+                       	 DateDayMap.get(dtobj) == dataMap.get('Tuesday') ||
+                       	DateDayMap.get(dtobj) == dataMap.get('Wednesday') ||
+                       DateDayMap.get(dtobj) == dataMap.get('Thursday') ||
+                       DateDayMap.get(dtobj) == dataMap.get('Friday')){
+                       visitObj.Visit_Date__c = dtobj.date();
+                       if(visitListMap.get('AccountId').toString().startsWith('001')){
+                           visitObj.Account__c = visitListMap.get('AccountId').toString();
+                        }else{
+                           visitObj.Lead__c = visitListMap.get('AccountId').toString();  
+                       }        
+                        if(visitListMap.get('ContactId').tostring().startsWith('003')){
+                        visitObj.Contact__c = visitListMap.get('ContactId').tostring();
+                        }
+                    }/*else if (DateDayMap.get(dtobj) == dataMap.get('Tuesday')){
+                        visitObj.Visit_Date__c = dtobj.date();
+                        if(visitListMap.get('AccountId').toString().startsWith('001')){
+                           visitObj.Account__c = visitListMap.get('AccountId').toString();
+                        }else{
+                           visitObj.Lead__c = visitListMap.get('AccountId').toString();  
+                       }        
+                        if(visitListMap.get('ContactId').tostring().startsWith('003')){
+                        visitObj.Contact__c = visitListMap.get('ContactId').tostring();
+                        }
+                    }else if(DateDayMap.get(dtobj) == dataMap.get('Wednesday')){
+                        visitObj.Visit_Date__c = dtobj.date();
+                        if(visitListMap.get('AccountId').toString().startsWith('001')){
+                           visitObj.Account__c = visitListMap.get('AccountId').toString();
+                        }else{
+                           visitObj.Lead__c = visitListMap.get('AccountId').toString();  
+                       }        
+                        if(visitListMap.get('ContactId').tostring().startsWith('003')){
+                        visitObj.Contact__c = visitListMap.get('ContactId').tostring();
+                        }
+                    }else if(DateDayMap.get(dtobj) == dataMap.get('Thursday')){
+                        visitObj.Visit_Date__c = dtobj.date();
+                        if(visitListMap.get('AccountId').toString().startsWith('001')){
+                           visitObj.Account__c = visitListMap.get('AccountId').toString();
+                        }else{
+                           visitObj.Lead__c = visitListMap.get('AccountId').toString();  
+                       }        
+                        if(visitListMap.get('ContactId').tostring().startsWith('003')){
+                        visitObj.Contact__c = visitListMap.get('ContactId').tostring();
+                        }
+                    }else if(DateDayMap.get(dtobj) == dataMap.get('Friday')){
+                        visitObj.Visit_Date__c = dtobj.date();
+                        if(visitListMap.get('AccountId').toString().startsWith('001')){
+                           visitObj.Account__c = visitListMap.get('AccountId').toString();
+                        }else{
+                           visitObj.Lead__c = visitListMap.get('AccountId').toString();  
+                       }        
+                        if(visitListMap.get('ContactId').tostring().startsWith('003')){
+                        visitObj.Contact__c = visitListMap.get('ContactId').tostring();
+                        }
+                    }*/
+                    visitList.add(visitObj);
+                }
+            }
+            insert visitList;
+            system.debug('Date list on which visit need to create : '+visitList);
+        }catch(exception e){
+            system.debug('Error In Creating visit : '+e.getMessage());
+            system.debug('Error line number : '+e.getLineNumber());
+        }
+       
+    }
+////////////////////// MAP VIEW ends ////////////////////////////////////    
+    
+////////////////////// Calendar view Methods /////////////////////////////        
+    @RemoteAction
+    public static void calenderView(string json_data){
+        try{
+            system.debug('Request data : '+json_data);
+            list<Visit__c> vtList = new list<Visit__c>();
+            list<object> dataList = (list<object>)JSON.deserializeUntyped(json_data);
+            system.debug('Data List : '+dataList);
+            for(object o : dataList){
+                map<string, object> dataMap =  (map<string, object>)o;
+                Visit__c vt = new Visit__c();
+                string [] dateArr = string.valueOf(dataMap.get('Date')).split('-');
+                string [] timeArr = string.valueOf(dataMap.get('Time')).split(':');
+                system.debug('Time array : '+timeArr);
+                vt.Visit_Date__c = date.newInstance(integer.valueOf(dateArr[0]), integer.valueOf(dateArr[1]), integer.valueOf(dateArr[2]));
+                if(dataMap.get('Time') != ''){
+                    system.debug('If block of time :'+dataMap.get('Time'));
+                    vt.Visit_Time__c = time.newInstance(integer.valueOf(timeArr[0]), integer.valueOf(timeArr[1]), 0, 0);    
+                }
+                
+                if(dataMap.get('conId') !=''){
+                    system.debug('if block of contact');
+                    vt.Contact__c = string.valueOf(dataMap.get('conId'));
+                }
+                if(string.valueOf(dataMap.get('Id')).startsWith('001')){
+                    vt.Account__c = string.valueOf(dataMap.get('Id'));
+                }else{
+                    vt.Lead__c = string.valueOf(dataMap.get('Id'));    
+                }
+                vtList.add(vt);
+                system.debug('Data Map : '+dataMap);
+            }
+            system.debug('Visit List inserted : '+vtList);
+            insert vtList;
+        }catch(exception e){
+            system.debug('Error Message : '+e.getMessage());
+            system.debug('error line no : '+e.getLineNumber());
+        }
+    }
+    
+    @RemoteAction
+    public static void deleteEvent(string data){
+        try{
+            system.debug('Request data : '+data);
+            string id = JSON.serialize(data);
+            system.debug('data after serialise : '+id);
+            Visit__c delVisit = new Visit__c();
+            delVisit.Id = data.right(18);
+            system.debug('Visit for Deleting : '+delVisit);
+            delete delVisit;
+        }catch(exception e){
+            system.debug('Error in deleting event : '+e.getStackTraceString());
+        }
+       
+    }
+    
+    @RemoteAction 
+    public static void updateEventNew(string jsdata){
+        try{system.debug('Request Data for Update : '+jsdata);    
+            map<string, object> dataMap = (map<string, object>)JSON.deserializeUntyped(jsdata);
+            system.debug('Request Data for Update : '+dataMap);    
+            Visit__c updateVisit = new Visit__c();
+            updateVisit.Id = string.valueOf(dataMap.get('Id'));
+            string [] datearr = string.valueOf(dataMap.get('Date')).split('-');
+            string [] timearr = string.valueOf(dataMap.get('Time')).split(':');
+            system.debug('time array size : '+timearr.size());
+            if(timearr !=null ){
+                system.debug('time empty');
+            }
+            updateVisit.Visit_Date__c = date.newInstance(integer.valueOf(datearr[0]), integer.valueOf(datearr[1]), integer.valueOf(datearr[2]));
+            updateVisit.Visit_Time__c = timearr.size() > 1 ? time.newInstance(integer.valueOf(timearr[0]), integer.valueOf(timearr[1]), 0, 0) : time.newInstance(0, 0, 0, 0);
+            system.debug('Update visit : '+updateVisit);
+            update updateVisit;
+        }catch(exception e){
+            system.debug('Error in updating the event : '+e.getStackTraceString());
+            system.debug('Error in updating the event : '+e.getMessage());
+        }
+        
+    }
+
+    }
